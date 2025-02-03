@@ -11,6 +11,7 @@ const {
   sensitiveEndpointsLimiter,
 } = require("./middleware/rateLimiter");
 const errorHandler = require("./middleware/errorHandler");
+const { validateToken } = require("./middleware/authMiddleware");
 
 const logger = require("./utils/logger");
 
@@ -55,12 +56,33 @@ app.use(
   })
 );
 
+// Proxy to post service
+app.use(
+  "/v1/posts",
+  validateToken,
+  proxy(process.env.POST_SERVICE_URL, {
+    ...proxyOptions,
+    proxyReqOptDecorator: (proxyReqOpts, srcReq) => {
+      proxyReqOpts.headers["Content-Type"] = "application/json";
+      proxyReqOpts.headers["x-user-id"] = srcReq.user.userId;
+      return proxyReqOpts;
+    },
+    userResDecorator: (proxyRes, proxyResData, userReq, userRes) => {
+      logger.info(
+        `Response received from Post services: ${proxyRes.statusCode}`
+      );
+      return proxyResData;
+    },
+  })
+);
+
 app.use(errorHandler);
 
 app.listen(PORT, () => {
   logger.info(`Api gateway running on port ${PORT}`);
   logger.info(`Identity service URL: ${process.env.IDENTITY_SERVICE_URL}`);
-  logger.info(`Redis URL: ${process.env.REDIS_URL}`);
+  logger.info(`Post service URL: ${process.env.POST_SERVICE_URL}`);
+  logger.info(`Redis URL: ${process.env.REDIS_URI}`);
 });
 
 // unhandled promise rejections
